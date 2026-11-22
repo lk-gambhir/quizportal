@@ -1,7 +1,5 @@
 # Cloud-Based Online Quiz Portal using AWS
 
-Cloud Computing course project, Lab L202 (Friday 1:50 PM). Faculty Advisor: Samya Muri.
-
 | Team member | Roll No. |
 |---|---|
 | Sanchita Jain | 1024031020 |
