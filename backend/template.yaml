@@ -1,0 +1,290 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cloud-Based Online Quiz Portal (S3, Cognito, API Gateway, Lambda, DynamoDB, CloudWatch)
+
+# Settings shared by both Lambda functions.
+Globals:
+  Function:
+    CodeUri: src/
+    Runtime: nodejs24.x
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 10
+    LoggingConfig: { LogFormat: JSON }
+    Environment:
+      Variables:
+        QUIZZES_TABLE: !Ref QuizzesTable
+        QUESTIONS_TABLE: !Ref QuestionsTable
+        RESULTS_TABLE: !Ref ResultsTable
+        MEDIA_BUCKET: !Ref MediaBucket
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Email that receives the API 5XX alarm
+
+Resources:
+  # ---------- Cognito ----------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: quiz-portal-users
+      UserPoolTier: LITE
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      Schema:
+        - { Name: name, AttributeDataType: String, Required: true, Mutable: true }
+        - Name: rollNo
+          AttributeDataType: String
+          Mutable: true
+          StringAttributeConstraints: { MinLength: '0', MaxLength: '20' }
+      AccountRecoverySetting:
+        RecoveryMechanisms: [{ Name: verified_email, Priority: 1 }]
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: quiz-portal-web
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      PreventUserExistenceErrors: ENABLED
+      IdTokenValidity: 8
+      AccessTokenValidity: 8
+      RefreshTokenValidity: 1
+      TokenValidityUnits: { IdToken: hours, AccessToken: hours, RefreshToken: days }
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Admin
+      UserPoolId: !Ref UserPool
+
+  # ---------- DynamoDB (provisioned: 23 RCU / 23 WCU total, inside Always Free 25/25) ----------
+  QuizzesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: quiz-portal-quizzes
+      BillingMode: PROVISIONED
+      AttributeDefinitions: [{ AttributeName: quizId, AttributeType: S }]
+      KeySchema: [{ AttributeName: quizId, KeyType: HASH }]
+      ProvisionedThroughput: { ReadCapacityUnits: 4, WriteCapacityUnits: 1 }
+
+  QuestionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: quiz-portal-questions
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - { AttributeName: quizId, AttributeType: S }
+        - { AttributeName: questionId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: quizId, KeyType: HASH }
+        - { AttributeName: questionId, KeyType: RANGE }
+      ProvisionedThroughput: { ReadCapacityUnits: 8, WriteCapacityUnits: 2 }
+
+  ResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: quiz-portal-results
+      BillingMode: PROVISIONED
+      AttributeDefinitions:
+        - { AttributeName: quizId, AttributeType: S }
+        - { AttributeName: userId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: quizId, KeyType: HASH }
+        - { AttributeName: userId, KeyType: RANGE }
+      ProvisionedThroughput: { ReadCapacityUnits: 8, WriteCapacityUnits: 16 }
+      GlobalSecondaryIndexes:
+        - IndexName: byUser
+          KeySchema:
+            - { AttributeName: userId, KeyType: HASH }
+            - { AttributeName: quizId, KeyType: RANGE }
+          # answers left out on purpose: saving an answer then costs no index write
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes: [status, autoSubmitted, deadline, submittedAt, score, totalMarks]
+          ProvisionedThroughput: { ReadCapacityUnits: 3, WriteCapacityUnits: 4 }
+
+  # ---------- S3 ----------
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub quiz-portal-web-${AWS::AccountId}
+      WebsiteConfiguration: { IndexDocument: index.html, ErrorDocument: index.html }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub ${WebsiteBucket.Arn}/*
+
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub quiz-portal-media-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [GET, PUT]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+            MaxAge: 3000
+
+  # ---------- API + Lambda ----------
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: quiz-portal-api
+      StageName: dev
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+      Auth:
+        DefaultAuthorizer: CognitoAuth
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          CognitoAuth:
+            UserPoolArn: !GetAtt UserPool.Arn
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers: { Access-Control-Allow-Origin: "'*'", Access-Control-Allow-Headers: "'*'" }
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers: { Access-Control-Allow-Origin: "'*'", Access-Control-Allow-Headers: "'*'" }
+      MethodSettings:
+        - { ResourcePath: '/*', HttpMethod: '*', ThrottlingRateLimit: 20, ThrottlingBurstLimit: 40 }
+
+  # Two functions from the same code, each with its own IAM role (least privilege).
+  # Students' function cannot create, edit or delete quizzes and questions, or upload files.
+  StudentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: quiz-portal-student
+      Handler: index.studentHandler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:Scan]
+              Resource: !GetAtt QuizzesTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !GetAtt QuestionsTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+              Resource: !GetAtt ResultsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${ResultsTable.Arn}/index/byUser
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub ${MediaBucket.Arn}/questions/*
+      Events:
+        ListQuizzes: { Type: Api, Properties: { RestApiId: !Ref Api, Path: /quizzes, Method: GET } }
+        Start:       { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/quizzes/{quizId}/start', Method: POST } }
+        SaveAnswer:  { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/quizzes/{quizId}/answers', Method: PUT } }
+        Submit:      { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/quizzes/{quizId}/submit', Method: POST } }
+        MyResult:    { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/quizzes/{quizId}/result', Method: GET } }
+
+  # Admins' function cannot create or delete student attempts; it can only read them
+  # and grade expired ones (UpdateItem).
+  AdminFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: quiz-portal-admin
+      Handler: index.adminHandler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem, dynamodb:Scan]
+              Resource: !GetAtt QuizzesTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem, dynamodb:Query]
+              Resource: !GetAtt QuestionsTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Query]
+              Resource: !GetAtt ResultsTable.Arn
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub ${MediaBucket.Arn}/questions/*
+      Events:
+        AdminList:      { Type: Api, Properties: { RestApiId: !Ref Api, Path: /admin/quizzes, Method: GET } }
+        AdminCreate:    { Type: Api, Properties: { RestApiId: !Ref Api, Path: /admin/quizzes, Method: POST } }
+        AdminGet:       { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/admin/quizzes/{quizId}', Method: GET } }
+        AdminPatch:     { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/admin/quizzes/{quizId}', Method: PATCH } }
+        AdminDelete:    { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/admin/quizzes/{quizId}', Method: DELETE } }
+        AddQuestion:    { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/admin/quizzes/{quizId}/questions', Method: POST } }
+        UpdateQuestion: { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/admin/quizzes/{quizId}/questions/{questionId}', Method: PUT } }
+        DeleteQuestion: { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/admin/quizzes/{quizId}/questions/{questionId}', Method: DELETE } }
+        UploadUrl:      { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/admin/quizzes/{quizId}/upload-url', Method: POST } }
+        QuizResults:    { Type: Api, Properties: { RestApiId: !Ref Api, Path: '/admin/quizzes/{quizId}/results', Method: GET } }
+
+  StudentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/quiz-portal-student
+      RetentionInDays: 14
+
+  AdminLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/quiz-portal-admin
+      RetentionInDays: 14
+
+  # ---------- Monitoring ----------
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription: [{ Protocol: email, Endpoint: !Ref AlertEmail }]
+
+  Api5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: quiz-portal-api-5xx
+      Namespace: AWS/ApiGateway
+      MetricName: 5XXError
+      Dimensions: [{ Name: ApiName, Value: quiz-portal-api }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/dev
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  WebsiteBucket:
+    Value: !Ref WebsiteBucket
+  WebsiteUrl:
+    Value: !GetAtt WebsiteBucket.WebsiteURL
+  MediaBucket:
+    Value: !Ref MediaBucket

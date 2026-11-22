@@ -1,0 +1,169 @@
+/* Plain white and blue. No gradients, no shadows. */
+:root {
+  --blue: #1d4ed8;
+  --blue-dark: #1e3a8a;
+  --blue-light: #eff6ff;
+  --border: #cbd5e1;
+  --text: #111827;
+  --muted: #6b7280;
+  --error: #b91c1c;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: #ffffff;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+
+/* ---------- Top bar ----------
+   Full width: app name in the left corner, tabs + user + logout in the right corner. */
+.header {
+  background: var(--blue);
+  color: #ffffff;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px;
+}
+.header a { color: #ffffff; text-decoration: none; }
+.header .brand { font-weight: 700; font-size: 20px; }
+.header-right { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+
+/* Tab: white text with an underline under the current page, so it looks different from the Log out button. */
+.header .tab {
+  padding: 6px 4px;
+  border-bottom: 3px solid transparent;
+  font-weight: 600;
+}
+.header .tab:hover { border-bottom-color: var(--blue-light); }
+.header .tab.active { border-bottom-color: #ffffff; }
+
+.header .user {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  padding-left: 12px;
+  border-left: 1px solid #ffffff;
+  font-weight: 600;
+}
+.header .user .role { font-size: 12px; font-weight: normal; }
+
+/* Log out: solid white button, so it stands apart from the blue bar and from the tab. */
+.header .logout {
+  background: #ffffff;
+  color: var(--blue);
+  border: 2px solid #ffffff;
+  font-weight: 600;
+}
+.header .logout:hover { background: var(--blue-light); }
+
+.container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+.narrow { max-width: 420px; }
+
+h1 { font-size: 24px; margin: 0 0 16px; color: var(--blue-dark); }
+h2 { font-size: 18px; margin: 24px 0 12px; color: var(--blue-dark); }
+a { color: var(--blue); }
+
+.box {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.space-between { justify-content: space-between; }
+.muted { color: var(--muted); font-size: 14px; }
+
+/* ---------- Forms ---------- */
+label { display: block; font-weight: 600; margin: 12px 0 4px; }
+input, textarea, select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+input:focus, textarea:focus { outline: 2px solid var(--blue); border-color: var(--blue); }
+input[type='radio'], input[type='checkbox'] { width: auto; }
+
+/* Password field with the eye button inside it on the right. */
+.password-field { position: relative; }
+.password-field input { padding-right: 44px; }
+.password-field .eye {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  color: var(--blue);
+}
+.password-field .eye:hover { background: var(--blue-light); }
+
+button, .button {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  background: var(--blue);
+  color: #ffffff;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+button:hover, .button:hover { background: var(--blue-dark); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.secondary, .button.secondary { background: #ffffff; color: var(--blue); }
+button.secondary:hover, .button.secondary:hover { background: var(--blue-light); }
+
+.error { color: var(--error); }
+.notice { background: var(--blue-light); border: 1px solid var(--blue); border-radius: 4px; padding: 10px 12px; }
+
+/* ---------- Tables ---------- */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+th { background: var(--blue-light); color: var(--blue-dark); }
+.table-wrap { overflow-x: auto; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--blue);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--blue);
+}
+
+/* ---------- Quiz ---------- */
+.timer {
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+  font-weight: 700;
+  font-size: 18px;
+  z-index: 1;
+}
+.timer.low { color: var(--error); }
+
+.option {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-weight: normal;
+  cursor: pointer;
+}
+.option.selected { border-color: var(--blue); background: var(--blue-light); }
+.option.correct { border-color: var(--blue); background: var(--blue-light); font-weight: 600; }
+.option.wrong { border-color: var(--error); }
+
+.question-image { max-width: 100%; max-height: 300px; margin: 8px 0; border: 1px solid var(--border); }
