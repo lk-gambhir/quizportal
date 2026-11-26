@@ -1,4 +1,4 @@
-# Cloud-Based Online Quiz Portal using AWS
+# Serverless Online Quiz Portal using AWS
 
 | Team member | Roll No. |
 |---|---|
@@ -23,16 +23,7 @@ A simple online quiz portal for students and faculty. Students register, attempt
 
 ## AWS Architecture
 
-```mermaid
-flowchart LR
-    U[Students and Faculty] --> S3W[Amazon S3<br/>website]
-    U --> COG[Amazon Cognito<br/>login]
-    U --> API[Amazon API Gateway]
-    API --> L[AWS Lambda<br/>student and admin functions]
-    L --> DB[(Amazon DynamoDB)]
-    L --> S3M[Amazon S3<br/>question images]
-    L -.-> CW[Amazon CloudWatch<br/>logs and alarm]
-```
+![AWS architecture of the Serverless Online Quiz Portal](architecture.png)
 
 | Service | Use |
 |---|---|

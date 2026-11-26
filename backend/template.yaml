@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Cloud-Based Online Quiz Portal (S3, Cognito, API Gateway, Lambda, DynamoDB, CloudWatch)
+Description: Serverless Online Quiz Portal (S3, Cognito, API Gateway, Lambda, DynamoDB, CloudWatch)
 
 # Settings shared by both Lambda functions.
 Globals:

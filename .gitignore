@@ -5,8 +5,11 @@ dist/
 .DS_Store
 
 # Project proposal PDF has team phone numbers; keep it out of the public repo
-Cloud project.pdf
+*.pdf
 
 docs/
 # Planning documents stay local
 docs/
+
+# Presentation stays local
+*.pptx
